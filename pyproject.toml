@@ -1,0 +1,22 @@
+[project]
+name = "conv-par-portal-scrapper"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "betor", email = "beto.rebonatto.neto@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "pandas>=3.0.6",
+    "pip>=26.2.1",
+    "selenium>=4.51.0",
+    "webdriver-manager>=4.1.2",
+]
+
+[project.scripts]
+conv-par-portal-scrapper = "conv_par_portal_scrapper:main"
+
+[build-system]
+requires = ["uv_build>=0.12.18,<0.13.0"]
+build-backend = "uv_build"
