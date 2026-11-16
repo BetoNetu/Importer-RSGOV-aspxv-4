@@ -1,13 +1,14 @@
 [project]
-name = "conv-par-portal-scrapper"
+name = "rs-gov-scrapper"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 authors = [
     { name = "betor", email = "beto.rebonatto.neto@gmail.com" }
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
+    "chromedriver-binary==156.0.8074.0",
     "pandas>=3.0.6",
     "pip>=26.2.1",
     "selenium>=4.51.0",
@@ -15,7 +16,7 @@ dependencies = [
 ]
 
 [project.scripts]
-conv-par-portal-scrapper = "conv_par_portal_scrapper:main"
+scrapper = "rs_gov_scrapper:main"
 
 [build-system]
 requires = ["uv_build>=0.12.18,<0.13.0"]
