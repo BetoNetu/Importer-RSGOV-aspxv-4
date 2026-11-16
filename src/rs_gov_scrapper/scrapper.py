@@ -1,6 +1,11 @@
+"""### Scrapper:
+1. Vai ao site informado; 
+2. Procura por elementos específicos da na página html;
+3. Faz a busca a partir de critérios definidos (realizando as buscas em modo simples e duplo);
+4. Salva os dados em CSV."""
 
 # -------------------------------------------------------------------------------------------------------------------
-# Função Extratora V4: 1) Vai ao site fornecido; 2) Procura por elementos específicos da na página html; 3) Faz a
+# Função Extratora: 1) Vai ao site fornecido; 2) Procura por elementos específicos da na página html; 3) Faz a
 # busca a partir de critérios definidos (realizando as buscas em modo simples e duplo) 4) Salva os dados em CSV.
 # 
 # Especificamente desenvolvida para o Portal XXX (https://www.)
@@ -27,47 +32,16 @@ from rs_gov_scrapper.defaults import OUTPATH
 
 
 class Scrapper:
-    def __init__(self, headless: bool = False):
+    """Classe contendo toda a lógica da extração dos convênios e parcerias"""
+    def __init__(self, headless: bool = False)->None:
+        """Inicia o navegador e variáveis importantes"""
         options = webdriver.FirefoxOptions()
         if headless:
             options.add_argument("-headless")
         self.browser = webdriver.Firefox(options=options)
         self.wait = WebDriverWait(self.browser, 5)
-
-    @staticmethod
-    def _orgao_populado(driver:WebDriver)->int|Literal[False]:
-        try:
-            opcoes = driver.find_elements(By.CSS_SELECTOR, "#f_CodOrgao option")
-            return len(opcoes) > 1   # "blank" + pelo menos uma real
-        except sel_error.StaleElementReferenceException:
-            return False  # se o DOM foi substituído, tenta de novo
-
-    #Função condicional dos elementos de cada um, por enquanto parcerias e convênios tem f_EX==f_CodExercicio
-
-    #parcerias = f_ex, 70 (seduc), wait until > 94
-    #convênio = f_CodExercicio. 19 (seduc), wair until > 20?
-
-    def _fullwait(self) -> None:
-        """Função de espera para assegurar que os elementos são carregados antes de tentar interagir com eles, evitando erros"""
-        self.wait.until(EC.presence_of_element_located((By.ID, "f_CodExercicioConvenio")))
-        try:
-            self.wait.until(EC.presence_of_element_located((By.ID, "f_Ex"))) #Parcerias
-        except (sel_error.TimeoutException,sel_error.NoSuchElementException):
-            print("Elment f_Ex not found\nSearching for f_CodExercicio")
-            self.wait.until(EC.presence_of_element_located((By.ID, "f_CodExercicio"))) #Convênios
-        self.wait.until(EC.presence_of_element_located((By.ID, "f_CodOrgao")))
-
-    # Função Extratora
-    def extractor_from_RSGov(self, year0:int|None, year1:int, data_url:str) -> tuple[Literal[True],str,str|None]|tuple[Literal[False],None,None]:
-        """Função Extratora. Controla o self.browser, vai ao site, executa a busca e salva os dados em CSV"""
-
-        # Configuração do self.browser
-        self.browser=webdriver.Firefox()
-        #self.browser = webdriver.Chrome(service=Service(ChromeDriverManager(driver_version="140").install()))
-        self.wait = WebDriverWait(self.browser, 5)
-
-        success:bool=False
-        sel_errors_and_others:tuple=(
+        self.iter = 0
+        self.sel_errors_and_others:tuple=(
             #Selenium Exceptions
             sel_error.DetachedShadowRootException,
             sel_error.ElementClickInterceptedException,
@@ -106,6 +80,40 @@ class Scrapper:
             SyntaxError,
             IndexError,
         )
+
+    @staticmethod
+    def _orgao_populado(driver:WebDriver)->int|Literal[False]:
+        """Aguarda o f_CodOrgao option ser atualizado"""
+        try:
+            opcoes = driver.find_elements(By.CSS_SELECTOR, "#f_CodOrgao option")
+            return len(opcoes) > 1   # "blank" + pelo menos uma real
+        except sel_error.StaleElementReferenceException:
+            return False  # se o DOM foi substituído, tenta de novo
+
+    #Função condicional dos elementos de cada um, por enquanto parcerias e convênios tem f_EX==f_CodExercicio
+
+    #parcerias = f_ex
+    #convênio = f_CodExercicio
+
+    def _fullwait(self) -> None:
+        """Função de espera para assegurar que os elementos são carregados antes de tentar interagir com eles, evitando erros"""
+        self.wait.until(EC.presence_of_element_located((By.ID, "f_CodExercicioConvenio")))
+        try:
+            self.wait.until(EC.presence_of_element_located((By.ID, "f_Ex"))) #Parcerias
+        except (sel_error.TimeoutException,sel_error.NoSuchElementException):
+            print("Elment f_Ex not found\nSearching for f_CodExercicio")
+            self.wait.until(EC.presence_of_element_located((By.ID, "f_CodExercicio"))) #Convênios
+        self.wait.until(EC.presence_of_element_located((By.ID, "f_CodOrgao")))
+
+    # Função Extratora
+    def extractor_from_RSGov(self, year0:int|None, year1:int, data_url:str) -> tuple[Literal[True],str,str|None]|tuple[Literal[False],None,None]:
+        """Função Extratora. Controla o self.browser, vai ao site, executa a busca e salva os dados em CSV"""
+
+        # Garante que o primeiro só abre uma janela
+        if self.iter > 0:
+            self.__init__()
+        self.iter = min(self.iter, 1)
+        success:bool=False
         # Vai ao Site
         print("Abrindo naveador para acessar o banco de dados")
         self.browser.get(data_url)
@@ -122,9 +130,8 @@ class Scrapper:
         # Pega o nome do formulário
         try:
             form_name:str|None = form.get_attribute("name")
-            if form_name != None:
-                form_name:str=form_name.replace("f_","")
-        except sel_errors_and_others as e:
+            if form_name != None: form_name:str=form_name.replace("f_","")
+        except self.sel_errors_and_others as e:
             print(f"{e}")
             site_name:str=self.browser.title.replace(" ", "-").replace("f_","")
             form_name:str=site_name
@@ -156,7 +163,7 @@ class Scrapper:
             else:
                 select_year_field0.select_by_visible_text(str(year0))
                 option_year_value0 = year0
-        except sel_errors_and_others as e:
+        except self.sel_errors_and_others as e:
             print(f"Error selecting the first year option: {e}")
             self.browser.quit(); return success, None, None
 
@@ -165,7 +172,7 @@ class Scrapper:
         try:
             select_year_field1.select_by_visible_text(str(year1))
             option_year_value1 = year1
-        except sel_errors_and_others as e:
+        except self.sel_errors_and_others as e:
             print(f"Error selecting the first year option: {e}")
             input("Error. Press Enter to exit and try again...")
             self.browser.quit(); return success, None, None
@@ -203,7 +210,7 @@ class Scrapper:
             click_orgao = self.browser.find_element(By.ID, "f_CodOrgao")        
             select_click_orgao = Select(click_orgao)
             select_click_orgao.select_by_visible_text(want_name.strip().upper())
-        except sel_errors_and_others as e:
+        except self.sel_errors_and_others as e:
             print(f"Error ao selecionar o orgão: {e}")
             self.browser.quit(); return success, None, None
         sleep(1.5)
@@ -215,15 +222,15 @@ class Scrapper:
             sleep(1.5)
             try:
                 click_buscar.click()
-            except sel_errors_and_others as e:
+            except self.sel_errors_and_others as e:
                 print(f"Error: {e}")
                 try:
                     self.wait.until(EC.element_to_be_clickable((By.ID, "btPesquisar")))
                     self.browser.execute_script("arguments[0].click();", click_buscar)
-                except sel_errors_and_others as e:
+                except self.sel_errors_and_others as e:
                     print(f"JavaScript click also failed: {e}")
                     self.browser.quit(); return success, None ,None
-        except sel_errors_and_others as e:
+        except self.sel_errors_and_others as e:
                 print(f"Error: {e}")
                 self.browser.quit(); return success, None, None
 
@@ -250,7 +257,7 @@ class Scrapper:
             header_cells = header_row.find_elements(By.TAG_NAME, "th")
             headers = [cell.text.strip() for cell in header_cells]
             print(f"Found {len(headers)} headers: {headers}")
-        except sel_errors_and_others as e:
+        except self.sel_errors_and_others as e:
             print(f"Erro ao encontrar os resultados do container de dados: {e}")
             self.browser.quit(); return success, None ,None
 
@@ -273,7 +280,7 @@ class Scrapper:
                 links = row.find_elements(By.TAG_NAME, "a")
                 row_dict["Hyperlink"] = links[0].get_attribute("href") if links else ""
                 rows_data.append(row_dict)
-        except sel_errors_and_others as e:
+        except self.sel_errors_and_others as e:
             print(f"Erro ao localizar linhas de tbody: {e}")
             self.browser.quit(); return False, None ,None
 

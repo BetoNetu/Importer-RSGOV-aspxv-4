@@ -1,5 +1,7 @@
 #!./.venv/bin/python
-
+"""## rs_gov_scrapper
+Scripts em Python para coleta e extração de dados de um portal web legado e mal estruturado do Governo do RS, 
+com o objetivo de automatizar a obtenção de informações que seriam trabalhosas de coletar manualmente."""
 # -------------------------------------------------------------------------------------------------------------------
 # Arquivo Principal: Faz a lógica inicial e chama a função extratora
 # -------------------------------------------------------------------------------------------------------------------
@@ -38,8 +40,8 @@ def Processing()->tuple[str|None,str|None]:
                 extraction_success, site_name, form_name = s.extractor_from_RSGov(year0, year1, data_url)
                 if extraction_success != True:
                     print(f"Falha para o ano {YearIO}, continuando para o próximo ({years[i]})...")
-                for i in range(4):
-                    print(f" \rAguardando por 5 segundos:{5-(i+1):3d}%",end="",flush=True); sleep(1)
+                for i in range(5): # Python é 0 indexed
+                    print(f"\rAguardando por 5 segundos:{5-(i+1):3d}%",end="",flush=True); sleep(1)
                 print()
 
     return site_name, form_name
