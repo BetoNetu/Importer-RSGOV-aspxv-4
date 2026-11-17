@@ -97,9 +97,8 @@ class RSGovScrapper:
             SyntaxError,
             IndexError,
         )
-
     @staticmethod
-    def _orgao_populado(driver:WebDriver)->int|Literal[False]:
+    def _orgao_populado(driver:WebDriver)->int|bool:
         """Aguarda o f_CodOrgao option ser atualizado"""
         try:
             opcoes = driver.find_elements(By.CSS_SELECTOR, "#f_CodOrgao option")
@@ -164,7 +163,7 @@ class RSGovScrapper:
         file_data:list|None,
         ) -> None:
         
-        """Lida com a extração dos dados do site para um csv"""
+        """Lida com a extração dos dados do site para um csv (ToDO)"""
 
     def _element_inetraction(
         self,
@@ -204,11 +203,15 @@ class RSGovScrapper:
         action:str|None,
         finder_plural:bool=False,
     ) -> bool | WebElement | list[WebElement]| None:
+        """Lógica padronizada para lidar com os elementos"""
         try:
-            self._waiter(EC_name,locator)
-            elemento=self._finder(locator,finder_plural)
-            elemento=self._element_inetraction(elemento,action)
-            return elemento
+            if self._waiter(EC_name,locator):
+                elemento=self._finder(locator,finder_plural)
+                elemento=self._element_inetraction(elemento,action)
+                return elemento
+                # O elemento de _element_interaction deve ser
+                # imediatamente retornado para evitar que saia
+                # do escopo da função
         except self.sel_errors_and_others as e:
             print(f"{e}")
             print(dedent(f"""
