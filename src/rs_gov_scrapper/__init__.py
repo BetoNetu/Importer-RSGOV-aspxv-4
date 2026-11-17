@@ -5,15 +5,14 @@ com o objetivo de automatizar a obtenção de informações que seriam trabalhos
 # -------------------------------------------------------------------------------------------------------------------
 # Arquivo Principal: Faz a lógica inicial e chama a função extratora
 # -------------------------------------------------------------------------------------------------------------------
-from pathlib import Path
 from time import sleep
 
 from rs_gov_scrapper.defaults import OUTPATH
-from rs_gov_scrapper.scrapper import Scrapper
+from rs_gov_scrapper.scrapper import RSGovScrapper
 
 
 def Processing()->tuple[str|None,str|None]:
-    Path.mkdir(OUTPATH,exist_ok=True)
+    OUTPATH.mkdir(exist_ok=True)
     data_url = input("Enter the database's URL: ")
     start_year = int(input('Coloque o ano de início da busca: ').strip())
     if start_year == 0:
@@ -36,8 +35,8 @@ def Processing()->tuple[str|None,str|None]:
                     year0, year1 = None, YearIO
                     mode="simples"
                 print(f"\n--- Processando Ano: {YearIO}-{mode} ---")
-                s = Scrapper()
-                extraction_success, site_name, form_name = s.extractor_from_RSGov(year0, year1, data_url)
+                s = RSGovScrapper()
+                extraction_success, site_name, form_name = s.scrapper(year0, year1, data_url)
                 if extraction_success != True:
                     print(f"Falha para o ano {YearIO}, continuando para o próximo ({years[i]})...")
                 for i in range(5): # Python é 0 indexed
