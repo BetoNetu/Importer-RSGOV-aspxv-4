@@ -1,22 +1,22 @@
 [project]
 name = "rs-gov-scrapper"
-version = "0.1.0"
+version = "0.5"
 description = "Add your description here"
 readme = "README.md"
 authors = [
     { name = "betor", email = "beto.rebonatto.neto@gmail.com" }
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
-    "chromedriver-binary==156.0.8074.0",
-    "pandas>=3.0.6",
-    "pip>=26.2.1",
-    "selenium>=4.51.0",
-    "webdriver-manager>=4.1.2",
+    "pandas",
+    "pip",
+    "selenium",
+    "webdriver-manager",
 ]
 
 [project.scripts]
 scrapper = "rs_gov_scrapper:main"
+clear-logs = "rs_gov_scrapper.utils:clear_logs"
 
 [build-system]
 requires = ["uv_build>=0.12.18,<0.13.0"]

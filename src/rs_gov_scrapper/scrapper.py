@@ -30,7 +30,7 @@
 import sys
 from textwrap import dedent
 from time import sleep
-from typing import Any, Literal
+from typing import Any
 
 import pandas as pd
 import selenium.webdriver.remote.errorhandler as sel_error
@@ -44,22 +44,22 @@ from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
 
-from rs_gov_scrapper.defaults import OUTPATH
+from rs_gov_scrapper.defaults import OUTPATH, URLS, print_and_log
 
 
 class RSGovScrapper:
     """Classe contendo toda a lógica da extração dos convênios e parcerias"""
-    # Declarações da classe
+    
+    # Inicialização da classe
     def __init__(self, headless: bool = False)->None:
         """Inicia o navegador e variáveis importantes"""
-        print("Inicializando scrapper")
+        print_and_log("Inicializando scrapper")
         options = webdriver.FirefoxOptions()
         if headless:
             options.add_argument("-headless")
         self.driver = webdriver.Firefox(options=options)
         self.wait = WebDriverWait(self.driver, 5)
         self.iter = 0
-        # Para ele não crashar sozinho em cada try que deu errado
         self.sel_errors_and_others:tuple=(
             #Selenium Exceptions
             sel_error.DetachedShadowRootException,
@@ -98,7 +98,7 @@ class RSGovScrapper:
             IndexError,
         )
     @staticmethod
-    def _orgao_populado(driver:WebDriver)->int|bool:
+    def orgao_populado(driver:WebDriver)->int|bool:
         """Aguarda o f_CodOrgao option ser atualizado"""
         try:
             opcoes = driver.find_elements(By.CSS_SELECTOR, "#f_CodOrgao option")
@@ -106,22 +106,23 @@ class RSGovScrapper:
         except sel_error.StaleElementReferenceException:
             return False  # se o DOM foi substituído, tenta de novo
     
-    def _waiter(self, EC_name:str,locator:tuple[str,str]|WebElement) -> bool:
+    def _waiter(self, EC_name:str,locator:tuple|WebElement) -> bool:
         """Lida com as opções de espera"""
         for i in range(3):
             try:
                 match EC_name:
                     case "presence_of_element_located":
                         EC_var=EC.presence_of_element_located(locator)            # ty: ignore[invalid-argument-type]
-                        WebDriverWait(self.driver,5).until(EC_var)
+                        WebDriverWait(self.driver,10).until(EC_var)
                     case "presence_of_all_elements_located":
                         EC_var=EC.presence_of_all_elements_located(locator) # ty: ignore[invalid-argument-type]
-                        WebDriverWait(self.driver, 5).until(EC_var)
+                        WebDriverWait(self.driver, 10).until(EC_var)
                     case "element_to_be_clickable":
                         EC_var=EC.element_to_be_clickable(locator)
-                        WebDriverWait(self.driver,5).until(EC_var)
-                    case "_orgao_populado":
-                        WebDriverWait(self.driver,5).until(RSGovScrapper._orgao_populado)
+                        WebDriverWait(self.driver,10).until(EC_var)
+                    case "orgao_populado":
+                        WebDriverWait(self.driver,10).until(RSGovScrapper.orgao_populado)
+
                     case _:
                         raise ValueError(f"EC_name desconhecido: {EC_name}")
                 return True
@@ -131,13 +132,13 @@ class RSGovScrapper:
                 sleep(0.2)
         return False
 
-# Busca por elementos (finde_element e find_elements) 
-    def _finder(self, locator:tuple[Any,Any], plural:bool=False) -> WebElement | list[WebElement]:
+    def _finder(self, locator:tuple[Any,Any]|WebElement, plural:bool=False) -> WebElement | list[WebElement]:
         """Lida com a localização de elementos. Busca e retorna o objeto.
         Implementa driver.find_element() e driver.find_elements() de modo chamável"""
-        
-        print(f"Localizando elemento: {locator}")
+        print_and_log(f"Localizando elemento: {locator}")
         for i in range(3):
+            if not isinstance(locator,tuple):
+                locator:tuple[Any]=(locator,)
             try:
                 if plural != True:
                     elemento:WebElement = self.driver.find_element(*locator)
@@ -149,39 +150,87 @@ class RSGovScrapper:
                     raise    
                 sleep(0.2)
         if elemento is not None:
-            print(f"Elemento(s) {locator}, localizado(s)")
-            #print(elemento)
+            print_and_log(f"Elemento(s) {locator}, localizado(s)")
+            #print_and_log(elemento)
             return elemento
         else:
-            print(f"Elemento {locator} não localizado")
+            print_and_log(f"Elemento {locator} não localizado")
             return elemento
     
 # Interação com elementos já localizados
-    def _extract_pipeline(
+    def extract_pipeline(
         self,
         primary_element:WebElement,
-        file_data:list|None,
-        ) -> None:
-        
-        """Lida com a extração dos dados do site para um csv (ToDO)"""
+        ) -> list[dict[str,str|None]]|None:
+        """Lida com a extração dos dados do site para um csv"""
+    #Headers da tabela de Resultados
+        try:
+            self.wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "table")))  
+            # Espera os elementos estarem presentes
+            result_table = primary_element.find_element(By.TAG_NAME, "table")
+
+            self.wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "thead")))  
+            # Espera os headers da tabela estarem presentes
+            thead = result_table.find_element(By.TAG_NAME, "thead")
+
+            self.wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "tr")))  
+            # Espera que a linha dos headers da tabela estejam presentes
+            header_row = thead.find_element(By.TAG_NAME, "tr")
+
+            # Condensa os headers em uma lista
+            self.wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "th")))
+            header_cells = header_row.find_elements(By.TAG_NAME, "th")
+            headers = [cell.text.strip() for cell in header_cells]
+            print_and_log(f"Found {len(headers)} headers: {headers}")
+        except self.sel_errors_and_others as e:
+            print_and_log(f"Erro ao encontrar os resultados do container de dados: {e}")
+            self.driver.quit()
+            return None
+
+    # Dados
+        rows_data = []
+        try:
+            self.wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "tbody")))  
+            # Espera pelo corpo da tabela
+            tbody = result_table.find_element(By.TAG_NAME, "tbody")
+            self.wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "tr")))  
+            data_rows = tbody.find_elements(By.TAG_NAME, "tr")
+            for row in data_rows:
+                self.wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "td")))  
+                cells = row.find_elements(By.TAG_NAME, "td")
+                if not cells:
+                    continue
+                row_dict = {}
+                for i, cell in enumerate(cells):
+                    col_name = headers[i] if i < len(headers) else f"col_{i}"
+                    row_dict[col_name] = cell.text.strip()
+                links = row.find_elements(By.TAG_NAME, "a")
+                row_dict["Hyperlink"] = links[0].get_attribute("href") if links else ""
+                rows_data.append(row_dict)
+            return rows_data
+        except self.sel_errors_and_others as e:
+            print(e)
+            return None
 
     def _element_inetraction(
         self,
         elemento:WebElement|list[WebElement],
         action:str|None,
-        file_data:list|None=None
-        ) -> bool|WebElement|list[WebElement]|None:
+        select_value:str|int=""
+        ) -> bool|Select|WebElement|list[WebElement]|None:
 
         """Uma pipeline condensada para operar o navegador e a página (busca de elementos html)"""
         for i in range(3):
             try:
                 match action:
-                    case "Select":
-                        Select(elemento)  # ty: ignore[invalid-argument-type]
+                    case "select_by_visible_text":
+                        select_elemento=Select(elemento)  # ty: ignore[invalid-argument-type]
+                        select_elemento.select_by_visible_text(select_value)  # ty: ignore[invalid-argument-type]
+                    case "select_by_index":
+                        select_elemento=Select(elemento) # ty: ignore[invalid-argument-type]
+                        select_elemento.select_by_index(select_value)  # ty: ignore[invalid-argument-type]
                     case "click":         # O list_elements nunca chegará em click, tenho que agarntir isso
                         elemento.click()  # ty: ignore[unresolved-attribute] 
-                    case "extract":
-                        self._extract_pipeline(elemento, file_data) # ty: ignore[invalid-argument-type]
                     case "switch":
                         # Todos os portais tem frame zero, qualquer coisa só adicionar um parâmetro e mudar
                         self.driver.switch_to.frame(0)
@@ -199,62 +248,67 @@ class RSGovScrapper:
     def element_pipeline(
         self,
         EC_name:str,
-        locator:tuple,
+        locator:tuple|WebElement,
         action:str|None,
         finder_plural:bool=False,
-    ) -> bool | WebElement | list[WebElement]| None:
+        select_value:str|int="",
+    ) -> bool | WebElement | list[WebElement] | Select |None:
         """Lógica padronizada para lidar com os elementos"""
         try:
             if self._waiter(EC_name,locator):
                 elemento=self._finder(locator,finder_plural)
-                elemento=self._element_inetraction(elemento,action)
+                elemento=self._element_inetraction(elemento,action,select_value)
                 return elemento
                 # O elemento de _element_interaction deve ser
                 # imediatamente retornado para evitar que saia
                 # do escopo da função
         except self.sel_errors_and_others as e:
-            print(f"{e}")
-            print(dedent(f"""
+            print_and_log(f"{e}")
+            print_and_log(dedent(f"""
             Pipeline do elemento {locator if locator else "None"} falhou.
             Dados da Chamada:
-            elemento: {elemento if elemento else "None"}
+            elemento: {"None" if elemento is None else elemento}
             
             EC_name:{EC_name}
             action:{action if type(action) is str else "None"}
             finder_plural:{finder_plural}
             """))
             self.driver.quit()
-            print("exiting")
-            sys.exit(0)
-
-        # """Função de espera para assegurar que os elementos são carregados antes de tentar interagir com eles, evitando erros"""
-        # self.wait.until(EC.presence_of_element_located((By.ID, "f_CodExercicioConvenio")))
-        # self.wait.until(EC.presence_of_element_located((By.ID, "f_Ex"))) #Parcerias
-        # print("Elment f_Ex not found\nSearching for f_CodExercicio")
-        # self.wait.until(EC.presence_of_element_located((By.ID, "f_CodExercicio"))) #Convênios
-        # self.wait.until(EC.presence_of_element_located((By.ID, "f_CodOrgao")))
-
+            print_and_log("Saindo")
+            sys.exit(1)
 
 #Função condicional dos elementos de cada um
-    def _fields(self):
-        print("foo")
+    def campos(self, data_url:str, URLS:dict[str,str]=URLS) -> tuple:
+        """Filtra os nomes dos campos com base na URL"""
+        print_and_log("Definindo nome dos elementos com base na URL do Portal")
+        key = next((k for k, v in URLS.items() if v == data_url), None)
+        match key:
+            case "Parcerias":
+                name_ano_dropdown_1=(By.ID,"f_Ex") # esse é o que muda de nome
+            case "Convênios":
+                name_ano_dropdown_1=(By.ID,"f_CodExercicio")
+        print_and_log(f"Selecionado: Portal de {key}")
+        print_and_log(f"Url: {data_url}")
+        print_and_log("Primeiro dropdown campo: \"_CodExercicioConvenio\"")
+        print_and_log(f"Segundo dropdown campo: \"{name_ano_dropdown_1}\"")
+        return name_ano_dropdown_1
+
     #parcerias = f_ex
     #convênio = f_CodExercicio
-    #parcerias = f_ex, 70 (seduc), wait until > 94
-    #convênio = f_CodExercicio. 19 (seduc), wair until > 20?
+
 
 # Função Extratora
-    def scrapper(self, year0:int|None, year1:int, data_url:str) -> tuple[Literal[True],str,str|None]|tuple[Literal[False],None,None]:
+    def scrapper(self, want_name:str, year0:int|None, year1:int, data_url:str) -> tuple[bool,str|None,str|None]|None:
         """Função Extratora. Controla o navegador, vai ao site, executa a busca e salva os dados em CSV"""
 
         # Garante que o primeiro só abre uma janela
         if self.iter > 0:
-            print("(Re)inicializando scrapper")
+            print_and_log("(Re)inicializando scrapper")
             self.__init__()
         self.iter = min(self.iter, 1)
         success:bool=False
         # Vai ao Site
-        print("Abrindo naveador para acessar o banco de dados")
+        print_and_log("Abrindo naveador para acessar o banco de dados")
         self.driver.get(data_url)
 
         # Muda para o Data Frame 0
@@ -264,181 +318,163 @@ class RSGovScrapper:
             "switch",
             finder_plural=True
         )
-        print("Mudou para o frame 0.")
+        print_and_log("Mudou para o frame 0.")
 
-        # Procura o formulário de pesquisa na página
+    # Pega o nome do formulário e do site
+        site_name:str=self.driver.title
+        site_name = site_name.replace(" ", "-").replace("f_","").replace("fpe---","")                                            
+        
+    # Procura o formulário de pesquisa na página
         form=self.element_pipeline(
             "presence_of_element_located",
             (By.TAG_NAME, "form"),
             None
         )
+
         if form is None:
             raise RuntimeError("formulário não encontrado")
-        # Pega o nome do formulário e do site
-        site_name:str=self.driver.title.replace(" ", "-").replace("f_","").replace("fpe---","")                                              
-        form_name:str|None = form.get_attribute("name")           # ty: ignore[unresolved-attribute]
-        form_name:str=form_name.replace("f_","").replace("frm","")                       # ty: ignore[unresolved-attribute]
-        self.wait.until(EC.element_to_be_clickable(form))  # ty: ignore[invalid-argument-type]          
-        
-        # Continuar daqui
 
+        form_tries:int=3
+        while form_tries > 0:
+            try:
+                form_name:str|None = form.get_attribute("name")  # ty: ignore[unresolved-attribute]
+                form_name:str=form_name.replace("f_","").replace("frm","")  # ty: ignore[unresolved-attribute]
+                wait_form=self.wait.until(EC.element_to_be_clickable(form))  # ty: ignore[invalid-argument-type]
+                if wait_form is not False and form_name is not None:
+                    break
+            except sel_error.StaleElementReferenceException:
+                form_tries+=1
+                print_and_log("Formulário fico stale, tentando novamente")
+                print_and_log(f"Tentativas: {form_tries}/3")
+                form=self.element_pipeline(
+                "presence_of_element_located",
+                (By.TAG_NAME, "form"),
+                None
+                )
+                if form_tries>=3 and form_name is None:
+                    print_and_log("Formulário não encontrado após rechecagem")
+                    print_and_log("Tente novamente mais tarde")
+                    self.driver.quit(); return success, None, None
+    # Cria a pasta para os resultados
         portal_path=OUTPATH/f"{site_name.lower()}"
         form_path=portal_path/f"{form_name.lower() if form_name is not None else site_name}"
         form_path.mkdir(parents=True, exist_ok=True)
         
-        print(f"Pasta criada para o site: {form_path}")
+        print_and_log(f"Pasta criada para o site: {form_path}")
 
-        
+#=====================================================
+# Lógica dos grupos de portais pode se partir aqui
+#=====================================================
+
+    # Define os anos para os campos
+        name_ano_dropdown_1=self.campos(data_url)
+
     # Campos dropdowns dos anos
-        year_field0 = self.driver.find_element(By.ID, "f_CodExercicioConvenio")#Ambos
-        self.wait.until(EC.element_to_be_clickable(year_field0))
-        select_year_field0 = Select(year_field0)
-        try:
-            year_field1 = self.driver.find_element(By.ID, "f_Ex") #Parcerias
-        except (sel_error.TimeoutException,sel_error.NoSuchElementException):
-            print("Elmento f_Ex não localizado\nBuscando por f_CodExercicio")
-            year_field1 = self.driver.find_element(By.ID, "f_CodExercicio") #Convênios
-        
-        self.wait.until(EC.element_to_be_clickable(year_field1))
-        select_year_field1 = Select(year_field1)
-
         try:
             if year0 is None:
-                select_year_field0.select_by_index(0)
-                option_year_value0 = "blank"
+                self.element_pipeline(
+                    "presence_of_all_elements_located",
+                    (By.ID, "f_CodExercicioConvenio"), 
+                    "select_by_index",
+                    select_value=0
+                )
             else:
-                select_year_field0.select_by_visible_text(str(year0))
-                option_year_value0 = year0
+                self.element_pipeline(
+                "presence_of_element_located",
+                (By.ID, "f_CodExercicioConvenio"), 
+                "select_by_visible_text",
+                select_value=str(year0)
+                )
         except self.sel_errors_and_others as e:
-            print(f"Error selecting the first year option: {e}")
+            print_and_log(f"Error selecting the first year option: {e}")
             self.driver.quit(); return success, None, None
         try:
-            select_year_field1.select_by_visible_text(str(year1))
-            option_year_value1 = year1
+            self.element_pipeline( #Parcerias
+            "element_to_be_clickable",
+            name_ano_dropdown_1, 
+            "select_by_visible_text",
+            select_value=str(year1)
+            )
         except self.sel_errors_and_others as e:
-            print(f"Error selecting the first year option: {e}")
-            input("Error. Press Enter to exit and try again...")
+            print_and_log(f"Error selecting the second year option: {e}")
             self.driver.quit(); return success, None, None
-        print(f"First dropdown: '{option_year_value0}', Second dropdown: '{option_year_value1}'")  
-        sys.exit(0) #temp
+        print_and_log(f"Primeiro dropdown: {year0 if year0 is not None else "None"}")
+        print_and_log(f"Segundo dropdown: {year1}")  
+        
     # Lista de Órgãos
-        
-        WebDriverWait(self.driver, 30).until(RSGovScrapper()._orgao_populado)
-        
-        Orgao_list = self.driver.find_element(By.ID, "f_CodOrgao")
-        Orgao_Options = Orgao_list.find_elements(By.TAG_NAME, "option")
-        
+        Orgao_field = self.element_pipeline(
+            "orgao_populado",
+            (By.ID, "f_CodOrgao"),
+            None
+        )
+        Orgao_Options = Orgao_field.find_elements(By.TAG_NAME, "option")  # ty: ignore[unresolved-attribute]
         table_org = [{"Orgão": opcao.text.strip()} for opcao in Orgao_Options]
         df_orgao = pd.DataFrame(table_org)
-        print(df_orgao)
-        
-        csv_path_orgao = form_path/f"{option_year_value0}_{option_year_value1}_orgaooptions.csv"
+        csv_path_orgao = form_path/f"{year0 if year0 is not None else "None"}_{year1}_OrgaoOptions.csv"
         df_orgao.to_csv(csv_path_orgao, index=False)
-        print(f"Options saved as a table in CSV format! File saved to: {csv_path_orgao}")
+        print_and_log("Opções salvas como tabela em CSV!")
+        print_and_log("Arquivo de opções de Órgãos salvo em:")
+        print_and_log(f"{csv_path_orgao}")
         
-        # Selecionar Órgão
-        self.wait.until(EC.presence_of_element_located((By.ID, "f_CodOrgao")))
-        click_orgao = self.driver.find_element(By.ID, "f_CodOrgao")
-        Select(click_orgao)
-        
-        # logica para fazer o nome a) ser senitizado e b) vir de algum lugar
-        want_name:str="SECRETARIA DA EDUCACAO"
+    # Checa se o nome do Órgão está na lista, se não, vai embora
         linha:pd.DataFrame = df_orgao.copy().index[df_orgao.copy()["Orgão"] == want_name]
         if linha.empty:
-            print(f"Nome não encontrado: {want_name}")
+            print_and_log(f"Nome não encontrado: {want_name}")
             self.driver.quit(); return success, None, None
-        new_orgao_name = want_name.strip().replace(" ", "_")
-        print(f"Orgão selecionado: {want_name}")
 
-        try:
-            self.wait.until(EC.element_to_be_clickable(click_orgao)) 
-            select_click_orgao = Select(click_orgao)
-            select_click_orgao.select_by_visible_text(want_name.strip().upper())
+        try:          
+           self.element_pipeline(
+                "element_to_be_clickable",
+                (By.ID, "f_CodOrgao"),
+                "select_by_visible_text",
+                select_value=want_name
+            )
         except self.sel_errors_and_others as e:
-            print(f"Error ao selecionar o orgão: {e}")
+            print_and_log(f"Error ao selecionar o orgão: {e}")
             self.driver.quit(); return success, None, None
-
+    
     # Clicar buscar (Robusto para evitar probelemas)
         try:
-            self.wait.until(EC.element_to_be_clickable((By.ID, "btPesquisar")))
-            click_buscar = self.driver.find_element(By.ID, "btPesquisar")
+            self.element_pipeline(
+                "element_to_be_clickable",
+                (By.ID, "btPesquisar"),
+                "click"
+            )
+        except self.sel_errors_and_others as e:
+            print_and_log(f"Error: {e}")
+            print_and_log("Clique normal falhou, tentando clique JS")
             try:
-                click_buscar.click()
+                click_buscar=self.element_pipeline(
+                "element_to_be_clickable",
+                (By.ID, "btPesquisar"),
+                None
+                )
+                self.driver.execute_script("arguments[0].click();", click_buscar)
             except self.sel_errors_and_others as e:
-                print(f"Error: {e}")
-                try:
-                    self.wait.until(EC.element_to_be_clickable((By.ID, "btPesquisar")))
-                    self.driver.execute_script("arguments[0].click();", click_buscar)
-                except self.sel_errors_and_others as e:
-                    print(f"JavaScript click also failed: {e}")
-                    self.driver.quit(); return success, None ,None
-        except self.sel_errors_and_others as e:
-                print(f"Error: {e}")
-                self.driver.quit(); return success, None, None
+                print_and_log(f"JavaScript click also failed: {e}")
+                self.driver.quit(); return success, None ,None
 
-    # Buscar dados na página e organizar em tabela csv
-        #Headers da tabela de Resultados
-        try:
-            
-            self.wait.until(EC.presence_of_all_elements_located((By.ID, "dadosContainer")))  
-            # Espera os resultados carregar
-            results_container = self.driver.find_element(By.ID, "dadosContainer")
+    # Buscar dados na página e organizar em tabela csv        
+        results_container=self.element_pipeline(
+            "presence_of_all_elements_located",
+            (By.ID, "dadosContainer"),
+            None
+        )
+        rows_data=self.extract_pipeline(results_container)  # ty: ignore[invalid-argument-type]
 
-            self.wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "table")))  
-            # Espera os elementos estarem presentes
-            result_table = results_container.find_element(By.TAG_NAME, "table")
-
-            self.wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "thead")))  
-            # Espera os headers da tabela estarem presentes
-            thead = result_table.find_element(By.TAG_NAME, "thead")
-
-            self.wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "tr")))  
-            # Espera que a linha dos headers da tabela estejam presentes
-            header_row = thead.find_element(By.TAG_NAME, "tr")
-
-            # Condensa os headers em uma lista
-            self.wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "th")))
-            header_cells = header_row.find_elements(By.TAG_NAME, "th")
-            headers = [cell.text.strip() for cell in header_cells]
-            print(f"Found {len(headers)} headers: {headers}")
-        except self.sel_errors_and_others as e:
-            print(f"Erro ao encontrar os resultados do container de dados: {e}")
-            self.driver.quit(); return success, None ,None
-
-        # Data
-        rows_data = []
-        try:
-            self.wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "tbody")))  
-            # Wait for the table body to be present
-            tbody = result_table.find_element(By.TAG_NAME, "tbody")
-            self.wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "tr")))  
-            data_rows = tbody.find_elements(By.TAG_NAME, "tr")
-            for row in data_rows:
-                self.wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "td")))  
-                cells = row.find_elements(By.TAG_NAME, "td")
-                if not cells:
-                    continue
-                row_dict = {}
-                for i, cell in enumerate(cells):
-                    col_name = headers[i] if i < len(headers) else f"col_{i}"
-                    row_dict[col_name] = cell.text.strip()
-                links = row.find_elements(By.TAG_NAME, "a")
-                row_dict["Hyperlink"] = links[0].get_attribute("href") if links else ""
-                rows_data.append(row_dict)
-        except self.sel_errors_and_others as e:
-            print(f"Erro ao localizar linhas de tbody: {e}")
-            self.driver.quit(); return False, None ,None
-
-        # Gearar o Data Frame e salvar no CSV
+    # Gearar o Data Frame e salvar no CSV
+        if rows_data is None:
+            print_and_log("A busca não retornou resultados")
+            self.driver.quit(); return success, None, None
 
         df_search = pd.DataFrame(rows_data)
-        print(f"Localizaram-se {len(df_search)} linhas com dados.")
-        print(df_search)
-        csv_path_search = form_path/f"{option_year_value0}_{option_year_value1}_{new_orgao_name}_searchresults.csv"
+        print_and_log(f"Localizaram-se {len(df_search)} linhas com dados.")
+        print_and_log(df_search)
+        csv_path_search = form_path/f"{year0 if year0 is not None else "None"}_{year1}_{want_name.lower()}_searchresults.csv"
         df_search.to_csv(csv_path_search, index=False)
         
-        #End Chrome session
+        #End Browser session
         self.driver.quit()
-        print("Navegador fechado.")
+        print_and_log("Navegador fechado.")
         success:bool= True
         return success, site_name, form_name
