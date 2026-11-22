@@ -7,26 +7,17 @@
 #### Implementado
 
 - [Portal de Parcerias](https://portalfpe.sefaz.rs.gov.br/SefaConv/APL/FPE-Transacao.aspx?/SefaConv/APL/ProgramasNet/FPE-ParceriaFirmada-PESQUISAR_OUT.aspx)
-- [Portal de Convênios (WIP)](https://portalfpe.sefaz.rs.gov.br/SefaConv/APL/FPE-Transacao.aspx?/SefaConv/APL/ProgramasNet/FPE-ConvenioFirmado-PESQUISAR_OUT.aspx)
+- [Portal de Convênios](https://portalfpe.sefaz.rs.gov.br/SefaConv/APL/FPE-Transacao.aspx?/SefaConv/APL/ProgramasNet/FPE-ConvenioFirmado-PESQUISAR_OUT.aspx)
 ---
 #### To-do
 
 - [Editais de Chamamento](https://portalfpe.sefaz.rs.gov.br/sefaconv/apl/FPE-Transacao.aspx?/SefaConv/APL/ProgramasNet/FPE-PortalEditalConvenio-PESQUISAR_OUT.aspx)
-- [Dispenda de Eligibilidade Bonito <  2025](https://www.convenioseparcerias.rs.gov.br/dispensas-e-inexigibilidades) - Será um parto
 - [Dispenda de Eligibilidade Feio   >= 2025](https://portalfpe.sefaz.rs.gov.br/SefaConv/APL/FPE-Transacao.aspx?/SefaConv/APL/ProgramasNet/FPE-PORTALPUBLICACAOCONVENIO-Pesquisar_Out.aspx?chave=1) 
 - [Intenção de Recisão](https://www.convenioseparcerias.rs.gov.br/intencoes-de-rescisao-dos-termos-de-colaboracao-e-de-fomento)
 - [Manifestação de Interesse](https://portalfpe.sefaz.rs.gov.br/sefaconv/apl/FPE-Transacao.aspx?/SefaConv/APL/ProgramasNet/FPE-PortalMisConvenio-Pesquisar_Out.aspx)
+- [Dispenda de Eligibilidade Bonito <  2025](https://www.convenioseparcerias.rs.gov.br/dispensas-e-inexigibilidades) - Será um parto
 """
-# -------------------------------------------------------------------------------------------------------------------
-# Função Extratora: 1) Vai ao site fornecido; 2) Procura por elementos específicos da na página html; 3) Faz a
-# busca a partir de critérios definidos (realizando as buscas em modo simples e duplo) 4) Salva os dados em CSV.
-# 
-# Especificamente desenvolvida para o Portal de Convênios e Parcerias do RS (https://www.)
-
-# Implementado: 
-# Chamada por ../main/__init__.py
-# -------------------------------------------------------------------------------------------------------------------
-
+import csv
 import sys
 from textwrap import dedent
 from time import sleep
@@ -48,8 +39,25 @@ from rs_gov_scrapper.defaults import OUTPATH, URLS, print_and_log
 
 
 class RSGovScrapper:
-    """Classe contendo toda a lógica da extração dos convênios e parcerias"""
-    
+    """### Scrapper:
+    1. Vai ao site informado; 
+    2. Procura por elementos específicos da na página html;
+    3. Faz a busca a partir de critérios definidos (realizando as buscas em modo simples e duplo);
+    4. Salva os dados em CSV.
+    ---
+    #### Implementado
+
+    - [Portal de Parcerias](https://portalfpe.sefaz.rs.gov.br/SefaConv/APL/FPE-Transacao.aspx?/SefaConv/APL/ProgramasNet/FPE-ParceriaFirmada-PESQUISAR_OUT.aspx)
+    - [Portal de Convênios](https://portalfpe.sefaz.rs.gov.br/SefaConv/APL/FPE-Transacao.aspx?/SefaConv/APL/ProgramasNet/FPE-ConvenioFirmado-PESQUISAR_OUT.aspx)
+    ---
+    #### To-do
+
+    - [Editais de Chamamento](https://portalfpe.sefaz.rs.gov.br/sefaconv/apl/FPE-Transacao.aspx?/SefaConv/APL/ProgramasNet/FPE-PortalEditalConvenio-PESQUISAR_OUT.aspx)
+    - [Dispenda de Eligibilidade Feio   >= 2025](https://portalfpe.sefaz.rs.gov.br/SefaConv/APL/FPE-Transacao.aspx?/SefaConv/APL/ProgramasNet/FPE-PORTALPUBLICACAOCONVENIO-Pesquisar_Out.aspx?chave=1) 
+    - [Intenção de Recisão](https://www.convenioseparcerias.rs.gov.br/intencoes-de-rescisao-dos-termos-de-colaboracao-e-de-fomento)
+    - [Manifestação de Interesse](https://portalfpe.sefaz.rs.gov.br/sefaconv/apl/FPE-Transacao.aspx?/SefaConv/APL/ProgramasNet/FPE-PortalMisConvenio-Pesquisar_Out.aspx)
+    - [Dispenda de Eligibilidade Bonito <  2025](https://www.convenioseparcerias.rs.gov.br/dispensas-e-inexigibilidades) - Será um parto
+    """
     # Inicialização da classe
     def __init__(self, headless: bool = False)->None:
         """Inicia o navegador e variáveis importantes"""
@@ -58,7 +66,7 @@ class RSGovScrapper:
         if headless:
             options.add_argument("-headless")
         self.driver = webdriver.Firefox(options=options)
-        self.wait = WebDriverWait(self.driver, 5)
+        self.wait = WebDriverWait(self.driver, 30) # TimeOut Generoso
         self.iter = 0
         self.sel_errors_and_others:tuple=(
             #Selenium Exceptions
@@ -181,7 +189,7 @@ class RSGovScrapper:
             self.wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "th")))
             header_cells = header_row.find_elements(By.TAG_NAME, "th")
             headers = [cell.text.strip() for cell in header_cells]
-            print_and_log(f"Found {len(headers)} headers: {headers}")
+            print_and_log(f"{len(headers)} headers encontrados: {headers}")
         except self.sel_errors_and_others as e:
             print_and_log(f"Erro ao encontrar os resultados do container de dados: {e}")
             self.driver.quit()
@@ -190,7 +198,8 @@ class RSGovScrapper:
     # Dados
         rows_data = []
         try:
-            self.wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "tbody")))  
+            self.wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "tbody")))
+            print() 
             # Espera pelo corpo da tabela
             tbody = result_table.find_element(By.TAG_NAME, "tbody")
             self.wait.until(EC.presence_of_all_elements_located((By.TAG_NAME, "tr")))  
@@ -278,7 +287,7 @@ class RSGovScrapper:
             sys.exit(1)
 
 #Função condicional dos elementos de cada um
-    def campos(self, data_url:str, URLS:dict[str,str]=URLS) -> tuple:
+    def campos(self, data_url:str, URLS:dict[str,str]=URLS) -> tuple[str,str]:
         """Filtra os nomes dos campos com base na URL"""
         print_and_log("Definindo nome dos elementos com base na URL do Portal")
         key = next((k for k, v in URLS.items() if v == data_url), None)
@@ -296,11 +305,9 @@ class RSGovScrapper:
     #parcerias = f_ex
     #convênio = f_CodExercicio
 
-
 # Função Extratora
-    def scrapper(self, want_name:str, year0:int|None, year1:int, data_url:str) -> tuple[bool,str|None,str|None]|None:
+    def scrapper(self, want_name:str, year0:int|None, year1:int, data_url:str) -> tuple[bool,str|None,str|None]:
         """Função Extratora. Controla o navegador, vai ao site, executa a busca e salva os dados em CSV"""
-
         # Garante que o primeiro só abre uma janela
         if self.iter > 0:
             print_and_log("(Re)inicializando scrapper")
@@ -322,7 +329,7 @@ class RSGovScrapper:
 
     # Pega o nome do formulário e do site
         site_name:str=self.driver.title
-        site_name = site_name.replace(" ", "-").replace("f_","").replace("fpe---","")                                            
+        site_name = site_name.replace(" ", "-").replace("f_","").replace("FPE---","").lower()                                            
         
     # Procura o formulário de pesquisa na página
         form=self.element_pipeline(
@@ -338,7 +345,7 @@ class RSGovScrapper:
         while form_tries > 0:
             try:
                 form_name:str|None = form.get_attribute("name")  # ty: ignore[unresolved-attribute]
-                form_name:str=form_name.replace("f_","").replace("frm","")  # ty: ignore[unresolved-attribute]
+                form_name:str=form_name.replace("f_","").replace("frm","").lower()  # ty: ignore[unresolved-attribute]
                 wait_form=self.wait.until(EC.element_to_be_clickable(form))  # ty: ignore[invalid-argument-type]
                 if wait_form is not False and form_name is not None:
                     break
@@ -356,15 +363,15 @@ class RSGovScrapper:
                     print_and_log("Tente novamente mais tarde")
                     self.driver.quit(); return success, None, None
     # Cria a pasta para os resultados
-        portal_path=OUTPATH/f"{site_name.lower()}"
-        form_path=portal_path/f"{form_name.lower() if form_name is not None else site_name}"
+        portal_path=OUTPATH/f"{site_name}"
+        form_path=portal_path/f"{form_name if form_name is not None else site_name}"
         form_path.mkdir(parents=True, exist_ok=True)
         
         print_and_log(f"Pasta criada para o site: {form_path}")
 
-#=====================================================
-# Lógica dos grupos de portais pode se partir aqui
-#=====================================================
+#=========================================================
+# Lógica dos grupos de portais pode se divir a partir aqui
+#=========================================================
 
     # Define os anos para os campos
         name_ano_dropdown_1=self.campos(data_url)
@@ -453,7 +460,6 @@ class RSGovScrapper:
             except self.sel_errors_and_others as e:
                 print_and_log(f"JavaScript click also failed: {e}")
                 self.driver.quit(); return success, None ,None
-
     # Buscar dados na página e organizar em tabela csv        
         results_container=self.element_pipeline(
             "presence_of_all_elements_located",
@@ -471,10 +477,11 @@ class RSGovScrapper:
         print_and_log(f"Localizaram-se {len(df_search)} linhas com dados.")
         print_and_log(df_search)
         csv_path_search = form_path/f"{year0 if year0 is not None else "None"}_{year1}_{want_name.lower()}_searchresults.csv"
-        df_search.to_csv(csv_path_search, index=False)
+        df_search.to_csv(csv_path_search, index=False,quoting=csv.QUOTE_ALL,quotechar='"')
         
         #End Browser session
         self.driver.quit()
         print_and_log("Navegador fechado.")
         success:bool= True
+        sleep(1)
         return success, site_name, form_name
